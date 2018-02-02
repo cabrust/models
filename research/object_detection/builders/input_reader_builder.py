@@ -53,16 +53,29 @@ def build(input_reader_config):
     if not config.input_path:
       raise ValueError('At least one input path must be specified in '
                        '`input_reader_config`.')
-    _, string_tensor = parallel_reader.parallel_read(
-        config.input_path[:],  # Convert `RepeatedScalarContainer` to list.
-        reader_class=tf.TFRecordReader,
-        num_epochs=(input_reader_config.num_epochs
-                    if input_reader_config.num_epochs else None),
-        num_readers=input_reader_config.num_readers,
-        shuffle=input_reader_config.shuffle,
-        dtypes=[tf.string, tf.string],
-        capacity=input_reader_config.queue_capacity,
-        min_after_dequeue=input_reader_config.min_after_dequeue)
+
+    with tf.name_scope('Files_Are_Read_Here'):  
+      string_tensors = []
+      weights = []
+      for i, path in enumerate(config.input_path):
+        _, string_tensor = parallel_reader.parallel_read(
+            config.input_path[:],  # Convert `RepeatedScalarContainer` to list.
+            reader_class=tf.TFRecordReader,
+            num_epochs=(input_reader_config.num_epochs
+                        if input_reader_config.num_epochs else None),
+            num_readers=input_reader_config.num_readers,
+            shuffle=input_reader_config.shuffle,
+            dtypes=[tf.string, tf.string],
+            capacity=input_reader_config.queue_capacity,
+            min_after_dequeue=input_reader_config.min_after_dequeue)
+
+        weight = 1.0
+        string_tensors += [string_tensor]
+        weights += [weight]
+        
+      with tf.name_scope('Multiplexing_Happens_Here'):  
+        current_slice = tf.multinomial(tf.log([weights]), 1)[0]
+        out_string_tensor = tf.slice(string_tensors,current_slice, tf.constant([1], dtype=tf.int64))
 
     label_map_proto_file = None
     if input_reader_config.HasField('label_map_path'):
