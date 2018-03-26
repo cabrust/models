@@ -44,7 +44,13 @@ message InputReader {
   oneof input_reader {
     TFRecordInputReader tf_record_input_reader = 8;
     ExternalInputReader external_input_reader = 9;
+    TFRecordInputReaderMultiplexer tf_record_input_reader_mux = 10;
   }
+}
+
+message TFRecordInputReaderMultiplexer {
+  repeated TFRecordInputReader tf_record_input_reader = 1;
+  repeated float input_weight = 2;
 }
 
 // An input reader that reads TF Example protos from local TFRecord files.

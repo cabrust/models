@@ -53,11 +53,40 @@ def build(input_reader_config):
     if not config.input_path:
       raise ValueError('At least one input path must be specified in '
                        '`input_reader_config`.')
+    _, string_tensor = parallel_reader.parallel_read(
+        config.input_path[:],  # Convert `RepeatedScalarContainer` to list.
+        reader_class=tf.TFRecordReader,
+        num_epochs=(input_reader_config.num_epochs
+                    if input_reader_config.num_epochs else None),
+        num_readers=input_reader_config.num_readers,
+        shuffle=input_reader_config.shuffle,
+        dtypes=[tf.string, tf.string],
+        capacity=input_reader_config.queue_capacity,
+        min_after_dequeue=input_reader_config.min_after_dequeue)
 
-    with tf.name_scope('Files_Are_Read_Here'):  
+    label_map_proto_file = None
+    if input_reader_config.HasField('label_map_path'):
+      label_map_proto_file = input_reader_config.label_map_path
+    decoder = tf_example_decoder.TfExampleDecoder(
+        load_instance_masks=input_reader_config.load_instance_masks,
+        label_map_proto_file=label_map_proto_file)
+    return decoder.decode(string_tensor)
+
+  elif input_reader_config.WhichOneof('input_reader') == 'tf_record_input_reader_mux':
+    mux_config = input_reader_config.tf_record_input_reader_mux
+    
+    # Enumerate TFRecordInputReaders
+    with tf.name_scope('Files_Are_Read_Here'):
       string_tensors = []
       weights = []
-      for i, path in enumerate(config.input_path):
+      for index, config in enumerate(mux_config.tf_record_input_reader):
+        weight = mux_config.input_weight[index]
+
+        print('Multiplexed input reader %d (weight: %0.2f):' % (index, weight))
+        for path in config.input_path:
+          print('    %s' % path)
+
+        # Normal TFRecordInputReader stuff here
         _, string_tensor = parallel_reader.parallel_read(
             config.input_path[:],  # Convert `RepeatedScalarContainer` to list.
             reader_class=tf.TFRecordReader,
@@ -69,20 +98,22 @@ def build(input_reader_config):
             capacity=input_reader_config.queue_capacity,
             min_after_dequeue=input_reader_config.min_after_dequeue)
 
-        weight = 1.0
+        
         string_tensors += [string_tensor]
         weights += [weight]
-        
-      with tf.name_scope('Multiplexing_Happens_Here'):  
-        current_slice = tf.multinomial(tf.log([weights]), 1)[0]
-        out_string_tensor = tf.slice(string_tensors,current_slice, tf.constant([1], dtype=tf.int64))
+      
+    # Multiplex
+    with tf.name_scope('Multiplexing_Happens_Here'):  
+      current_slice = tf.multinomial(tf.log([weights]), 1)[0]
+      out_string_tensor = tf.slice(string_tensors,current_slice, tf.constant([1], dtype=tf.int64))
 
+    # Decode
     label_map_proto_file = None
     if input_reader_config.HasField('label_map_path'):
       label_map_proto_file = input_reader_config.label_map_path
     decoder = tf_example_decoder.TfExampleDecoder(
         load_instance_masks=input_reader_config.load_instance_masks,
         label_map_proto_file=label_map_proto_file)
-    return decoder.decode(string_tensor)
+    return decoder.decode(out_string_tensor)
 
   raise ValueError('Unsupported input_reader_config.')
