@@ -86,6 +86,10 @@ def build(input_reader_config):
         for path in config.input_path:
           print('    %s' % path)
 
+        for path in config.input_path[:]:
+            print('    %s' % path)
+
+
         # Normal TFRecordInputReader stuff here
         _, string_tensor = parallel_reader.parallel_read(
             config.input_path[:],  # Convert `RepeatedScalarContainer` to list.
@@ -105,6 +109,7 @@ def build(input_reader_config):
     # Multiplex
     with tf.name_scope('Multiplexing_Happens_Here'):  
       current_slice = tf.multinomial(tf.log([weights]), 1)[0]
+      # current_slice_prt = tf.Print(current_slice, [current_slice], 'Current Slice: ')
       out_string_tensor = tf.slice(string_tensors,current_slice, tf.constant([1], dtype=tf.int64))
 
     # Decode
